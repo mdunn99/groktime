@@ -8,6 +8,7 @@ instatiated = False
 
 def instatiate_openai():
     global instatiated
+    global client
     instatiated = True
     from openai import OpenAI
     client = OpenAI()
@@ -146,11 +147,14 @@ def handle_new_formats(log_string: str):
 # loop through grok list to find the first match
 def match_grok_pattern(log_line: str, pygrok_objects: list[Grok]) -> dict:
     global instatiated
+    i = 0
+
     grok_match = None
     for obj in pygrok_objects:
         grok_match = obj.match(log_line) # match log line to pygrok object
         if grok_match:
             break
+
     for i in range(3): # loop through this process 3 times in case api fucks it up
         if i > 0:
             print('retrying api call...') 
@@ -170,6 +174,7 @@ def main(log: str, output: str='out.json'):
     with open(log) as f:
         for i, line in enumerate(f): # reads each new line!
             line = line.rstrip()
+            print('\n')
             grok_match = match_grok_pattern(line, pygrok_objects)
             new_timestamp = convert_to_unix_time(grok_match["timestamp"])
             grok_match.update({"timestamp": new_timestamp})
