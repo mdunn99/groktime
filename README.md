@@ -13,5 +13,4 @@ Using the power of OpenAI's GPT-5-nano, this library dynamically writes Grok pat
 ## Need to:
 - Remove incorrect patterns after appending them
 - Error handling
-- Terminal arg handling
-- Write json dump to file
+- Have a more robust decision tree

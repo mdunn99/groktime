@@ -1,14 +1,20 @@
 from pygrok import Grok
 import json
-import datetime
-from time import sleep
-from openai import OpenAI
+from datetime import datetime
 import argparse
 #import logging
-client = OpenAI()
+
+instatiated = False
+
+def instatiate_openai():
+    global instatiated
+    instatiated = True
+    from openai import OpenAI
+    client = OpenAI()
 
 parser = argparse.ArgumentParser(description="GrokTime - Log Parser")
 parser.add_argument("-l", "--log", help="Log to pass into parser")
+parser.add_argument("-o", "--output", help="Output json file (default: out.json)")
 args = parser.parse_args()
 
 VARIABLES = ["timestamp", "host", "proc", "pid", "severity", "facility",
@@ -72,6 +78,28 @@ def call_api(log_string):
     )
     return response.output_text
 
+def convert_to_unix_time(timestamp: str) -> float | str:
+    current_year = datetime.now().year
+
+    # True if year must be implied
+    # False otherwise
+    formats = [
+        ("%d/%b/%Y:%H:%M:%S %z", False),
+        ("%b %d %H:%M:%S", True),
+    ]
+
+    for fmt, needs_year in formats:
+        try:
+            timestamp_str = f"{current_year} {timestamp}" if needs_year else timestamp
+            fmt_str = f"%Y {fmt}" if needs_year else fmt
+            dt = datetime.strptime(timestamp_str, fmt_str)
+            return dt.timestamp()
+        except ValueError:
+            continue
+
+    print('failed to convert timestamp')
+    return timestamp
+
 # instatiate or return a list of grok patterns
 def return_grok_patterns_list(grok_patterns_master_file: str='patterns.json'):
     with open(grok_patterns_master_file, 'r') as f:
@@ -116,10 +144,11 @@ def handle_new_formats(log_string: str):
     return grok_match
 
 # loop through grok list to find the first match
-def match_grok_pattern(log_line: str, pygrok_objects: list):
+def match_grok_pattern(log_line: str, pygrok_objects: list[Grok]) -> dict:
+    global instatiated
     grok_match = None
-    for object in pygrok_objects:
-        grok_match = object.match(log_line) # match log line to pygrok object
+    for obj in pygrok_objects:
+        grok_match = obj.match(log_line) # match log line to pygrok object
         if grok_match:
             break
     for i in range(3): # loop through this process 3 times in case api fucks it up
@@ -127,13 +156,13 @@ def match_grok_pattern(log_line: str, pygrok_objects: list):
             print('retrying api call...') 
         if not grok_match:
             print('new format found...')
+            instatiate_openai() if not instatiated else ''
             grok_match = handle_new_formats(log_line)
         else:
             break
-    print(grok_match)
     return grok_match
 
-def main(log: str, output: str=''):
+def main(log: str, output: str='out.json'):
     global grok_list, pygrok_objects
     all_events = dict()
     grok_list = return_grok_patterns_list()
@@ -141,8 +170,15 @@ def main(log: str, output: str=''):
     with open(log) as f:
         for i, line in enumerate(f): # reads each new line!
             line = line.rstrip()
-            matched_output = match_grok_pattern(line, pygrok_objects)
-            #all_events.update(matched_output)
+            grok_match = match_grok_pattern(line, pygrok_objects)
+            new_timestamp = convert_to_unix_time(grok_match["timestamp"])
+            grok_match.update({"timestamp": new_timestamp})
+            all_events[i] = grok_match
+    with open(output, 'w+') as f:
+        json.dump(all_events, f, indent=4)
+    print('json wrote to file! ☑')
 
-if args.log:
+if args.output:
+    main(args.log, args.output)
+else:
     main(args.log)
