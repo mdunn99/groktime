@@ -156,9 +156,9 @@ def match_grok_pattern(log_line: str, pygrok_objects: list[Grok]) -> dict:
             break
 
     for i in range(3): # loop through this process 3 times in case api fucks it up
-        if i > 0:
-            print('retrying api call...') 
         if not grok_match:
+            if i > 0:
+                print('retrying api call...') 
             print('new format found...')
             instatiate_openai() if not instatiated else ''
             grok_match = handle_new_formats(log_line)
