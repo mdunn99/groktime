@@ -3,7 +3,7 @@ Using the power of OpenAI's GPT-5-nano, this library dynamically writes Grok pat
 
 ## Core Features
 - A preset list of common Grok patterns in common log formats
-- Neglgible compute/API cost for writing new Grok patterns
+- Negligible compute/API cost for writing new Grok patterns
 - Configurable variable names
 
 ## Dependencies
@@ -14,3 +14,4 @@ Using the power of OpenAI's GPT-5-nano, this library dynamically writes Grok pat
 - Remove incorrect patterns after appending them
 - Error handling
 - Have a more robust decision tree
+- Add more datetime formats
