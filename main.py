@@ -3,15 +3,19 @@ import json
 import datetime
 from time import sleep
 from openai import OpenAI
+import argparse
 #import logging
 client = OpenAI()
+
+parser = argparse.ArgumentParser(description="GrokTime - Log Parser")
+parser.add_argument("-l", "--log", help="Log to pass into parser")
+args = parser.parse_args()
 
 VARIABLES = ["timestamp", "host", "proc", "pid", "severity", "facility",
             "login", "target_user", "auth_method", "login_status", "src_ip",
             "dst_ip", "src_port", "dst_port", "url", "domain", "path", "uri",
             "hash", "hash_algo", "signature", "command  ", "args", "session_id",
             "request_id", "trace_id", "status_code", "bytes_sent", "bytes_recv", "duration", "tty", "pwd"]
-
 
 def build_prompt():
     return f"""You produce Grok patterns to parse individual log lines using Python's pygrok library.
@@ -129,13 +133,16 @@ def match_grok_pattern(log_line: str, pygrok_objects: list):
     print(grok_match)
     return grok_match
 
-def main(log: str):
+def main(log: str, output: str=''):
     global grok_list, pygrok_objects
-    all_events = {"events":[]}
+    all_events = dict()
     grok_list = return_grok_patterns_list()
     pygrok_objects = return_compiled_pygrok_objects(grok_list)
     with open(log) as f:
         for i, line in enumerate(f): # reads each new line!
             line = line.rstrip()
             matched_output = match_grok_pattern(line, pygrok_objects)
-            all_events["events"].append(matched_output)
+            #all_events.update(matched_output)
+
+if args.log:
+    main(args.log)
