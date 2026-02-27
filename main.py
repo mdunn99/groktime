@@ -10,11 +10,13 @@ parser.add_argument("-o", "--output", help="Output json file (default: out.json)
 parser.add_argument("-p", "--patterns", help="The pattern json file to parse through (default: patterns.json)")
 args = parser.parse_args()
 
-instatiated = False
+instantiated= False
+grok_list = []
+pygrok_list = []
 
-def instatiate_openai():
-    global instatiated, client
-    instatiated = True
+def instantiate_openai():
+    global instantiated, client
+    instantiated= True
     from openai import OpenAI
     client = OpenAI()
 
@@ -101,16 +103,15 @@ def convert_to_unix_time(timestamp: str) -> float | str:
     print('failed to convert timestamp')
     return timestamp
 
-# instatiate or return a list of grok patterns
+# instantiate or return a list of grok patterns
 def return_grok_patterns_list(grok_patterns_master_file: str='patterns.json'):
     with open(grok_patterns_master_file, 'r') as f:
         pattern_dict = json.load(f)['patterns'] # load grok patterns file as a python dict
         grok_list = [p for p in pattern_dict] # define the list of grok patterns
         return grok_list
 
-# instatiate or return a list of pygrok objects so that grok is not called on patterns every log line.
-def return_compiled_pygrok_objects(grok_list: list) -> list[Grok]:
-    global pygrok_list
+# instantiate or return a list of pygrok objects so that grok is not called on patterns every log line.
+def return_compiled_pygrok_objects() -> list[Grok]:
     pygrok_list = [Grok(p) for p in grok_list] # pre-compile the patterns for easy iteration
     return pygrok_list
 
@@ -137,7 +138,7 @@ def handle_new_formats(log_string: str):
 
 # loop through grok list to find the first match
 def match_grok_pattern(log_line: str) -> dict | None:
-    global instatiated
+    global instantiated
     grok_match = None
     for obj in pygrok_list:
         grok_match = obj.match(log_line) # match log line to pygrok object
@@ -146,7 +147,7 @@ def match_grok_pattern(log_line: str) -> dict | None:
     if not grok_match:
         for i in range(3): # retry 3 times in case api gets the parsing wrong (grok_match == None)
             print('retrying api call...'  if i >0 else 'new format found...')
-            instatiate_openai() if not instatiated else ''
+            instantiate_openai() if not instantiated else ''
             grok_match, grok_pattern, pygrok_object = handle_new_formats(log_line)
             if grok_match:
                 append_master_file(grok_pattern)
@@ -155,10 +156,12 @@ def match_grok_pattern(log_line: str) -> dict | None:
         return None
 
 def main(log: str, output: str='out.json', grok_patterns_file: str='patterns.json') -> None:
-    global grok_list
+    global grok_list, pygrok_list
+
     all_events = dict()
     grok_list = return_grok_patterns_list(grok_patterns_file)
-    pygrok_list = return_compiled_pygrok_objects(grok_list)
+    pygrok_list = return_compiled_pygrok_objects()
+
     with open(log) as f:
         for i, line in enumerate(f): # reads each new line!
             line = line.rstrip()
