@@ -18,8 +18,8 @@ Using the power of OpenAI's GPT-5-mini, this library dynamically writes Grok pat
 5. Run: `python3 main.py -l LOG_FILE`
 
 ## Working on:
+- Reading log entry by timestamp rather than by newline
 - More robust decision tree
-- Support for streaming logs
 - Support for Web API calls
 - Asynchronous pattern writing with streaming
 - Add more datetime formats
