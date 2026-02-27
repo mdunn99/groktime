@@ -214,7 +214,6 @@ class Handler(FileSystemEventHandler):
 
 if __name__=="__main__":
     log = args.log
-    log = 'evil_1000.log'
     output = args.output
     patterns = args.patterns
     if output and patterns:
