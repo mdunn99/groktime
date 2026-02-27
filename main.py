@@ -175,7 +175,7 @@ def main(log: str, output: str='out.json', grok_patterns_file: str='patterns.jso
     print('json wrote to file! ☑')
     return
 
-'''if args.output:
+if args.output:
     if args.patterns:
         main(log=args.log, output=args.output, grok_patterns_file=args.patterns)
     else:
@@ -184,7 +184,4 @@ if not args.output:
     if args.patterns:
         main(log=args.log, grok_patterns_file=args.patterns)
     else:
-        main(log=args.log)'''
-
-if __name__=="__main__":
-    main(log='evil_1000.log')
+        main(log=args.log)
