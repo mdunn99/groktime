@@ -4,24 +4,24 @@ from datetime import datetime
 import argparse
 #import logging
 
+parser = argparse.ArgumentParser(description="GrokTime - Log Parser")
+parser.add_argument("-l", "--log", help="Log to pass into parser")
+parser.add_argument("-o", "--output", help="Output json file (default: out.json)")
+parser.add_argument("-p", "--patterns", help="The pattern json file to parse through (default: patterns.json)")
+args = parser.parse_args()
+
 instatiated = False
 
 def instatiate_openai():
-    global instatiated
-    global client
+    global instatiated, client
     instatiated = True
     from openai import OpenAI
     client = OpenAI()
 
-parser = argparse.ArgumentParser(description="GrokTime - Log Parser")
-parser.add_argument("-l", "--log", help="Log to pass into parser")
-parser.add_argument("-o", "--output", help="Output json file (default: out.json)")
-args = parser.parse_args()
-
 VARIABLES = ["timestamp", "host", "proc", "pid", "severity", "facility",
             "login", "target_user", "auth_method", "login_status", "src_ip",
             "dst_ip", "src_port", "dst_port", "url", "domain", "path", "uri",
-            "hash", "hash_algo", "signature", "command  ", "args", "session_id",
+            "hash", "hash_algo", "signature", "command", "args", "session_id",
             "request_id", "trace_id", "status_code", "bytes_sent", "bytes_recv", "duration", "tty", "pwd"]
 
 def build_prompt():
@@ -36,12 +36,12 @@ def build_prompt():
             - Treat known literal words in the log line as literals in the pattern, not as fields to capture.
             - Escape literal square brackets with a backslash: \\[ and \\].
             - Return the Grok pattern in the pattern field and an explanation in the note field.
-            - Use HOSTNAME not HOST
+            - Use HOSTNAME never HOST
             """
 
 def call_api(log_string):
     response = client.responses.create(
-    model="gpt-5-nano",
+    model="gpt-5-mini",
     input=[
         {"role": "system", "content": build_prompt()},
         {"role": "user", "content": log_string},
@@ -109,12 +109,13 @@ def return_grok_patterns_list(grok_patterns_master_file: str='patterns.json'):
         return grok_list
 
 # instatiate or return a list of pygrok objects so that grok is not called on patterns every log line.
-def return_compiled_pygrok_objects(grok_list: list):
-    objects = [Grok(p) for p in grok_list] # pre-compile the patterns for easy iteration
-    return objects
+def return_compiled_pygrok_objects(grok_list: list) -> list[Grok]:
+    global pygrok_list
+    pygrok_list = [Grok(p) for p in grok_list] # pre-compile the patterns for easy iteration
+    return pygrok_list
 
 # append new pattern to master file
-def append_master_file(pattern_to_append: str, grok_patterns_master_file: str='patterns.json'):
+def append_master_file(pattern_to_append: str, grok_patterns_master_file: str='patterns.json') -> None:
     with open(grok_patterns_master_file, 'r+') as f:
         grok_patterns_dict = json.load(f) # load grok patterns file as a python dict
         grok_patterns_dict["patterns"].append(pattern_to_append) # append pattern to python dict
@@ -122,68 +123,68 @@ def append_master_file(pattern_to_append: str, grok_patterns_master_file: str='p
         json.dump(grok_patterns_dict, f, indent=4) # dump the appended pattern to the json file
         return
 
-# when new formats arrive, this function is called to handle the logic of:
-# 1. grabbing a new grok pattern string from openapi
-# 2. ensuring this new grok pattern returns non-null
-# 3. appending this new grok pattern to the master file
-# 4. re-instatiating the grok_list and compiled_pygrok_objects, respectively
 def handle_new_formats(log_string: str):
-    global grok_list, pygrok_objects
     api_response = call_api(log_string)
-    print("api call complete")
     new_grok_pattern = json.loads(api_response)["pattern"]
+    try:
+        pygrok_object = Grok(new_grok_pattern)
+    except KeyError as e:
+        print(f"KeyError: {e} is not valid. Retrying...")
+        return None, None, None
+    grok_match = pygrok_object.match(log_string)
 
-    grok = Grok(new_grok_pattern)
-    grok_match = grok.match(log_string)
-    print("created new parsed string")
-
-    append_master_file(new_grok_pattern)
-    print("appended new grok pattern to master file")
-    grok_list = return_grok_patterns_list()
-    pygrok_objects = return_compiled_pygrok_objects(grok_list)
-    print("re-instatiated grok strings and pygrok objects")
-    return grok_match
+    return grok_match, new_grok_pattern, pygrok_object
 
 # loop through grok list to find the first match
-def match_grok_pattern(log_line: str, pygrok_objects: list[Grok]) -> dict:
+def match_grok_pattern(log_line: str) -> dict | None:
     global instatiated
-    i = 0
-
     grok_match = None
-    for obj in pygrok_objects:
+    for obj in pygrok_list:
         grok_match = obj.match(log_line) # match log line to pygrok object
         if grok_match:
-            break
-
-    for i in range(3): # loop through this process 3 times in case api fucks it up
-        if not grok_match:
-            if i > 0:
-                print('retrying api call...') 
-            print('new format found...')
+            return grok_match
+    if not grok_match:
+        for i in range(3): # retry 3 times in case api gets the parsing wrong (grok_match == None)
+            print('retrying api call...'  if i >0 else 'new format found...')
             instatiate_openai() if not instatiated else ''
-            grok_match = handle_new_formats(log_line)
-        else:
-            break
-    return grok_match
+            grok_match, grok_pattern, pygrok_object = handle_new_formats(log_line)
+            if grok_match:
+                append_master_file(grok_pattern)
+                pygrok_list.append(pygrok_object)
+                return grok_match
+        return None
 
-def main(log: str, output: str='out.json'):
-    global grok_list, pygrok_objects
+def main(log: str, output: str='out.json', grok_patterns_file: str='patterns.json') -> None:
+    global grok_list
     all_events = dict()
-    grok_list = return_grok_patterns_list()
-    pygrok_objects = return_compiled_pygrok_objects(grok_list)
+    grok_list = return_grok_patterns_list(grok_patterns_file)
+    pygrok_list = return_compiled_pygrok_objects(grok_list)
     with open(log) as f:
         for i, line in enumerate(f): # reads each new line!
             line = line.rstrip()
-            print('\n')
-            grok_match = match_grok_pattern(line, pygrok_objects)
-            new_timestamp = convert_to_unix_time(grok_match["timestamp"])
-            grok_match.update({"timestamp": new_timestamp})
-            all_events[i] = grok_match
-    with open(output, 'w+') as f:
+            grok_match = match_grok_pattern(line)
+            try:
+                new_timestamp = convert_to_unix_time(grok_match["timestamp"])
+                grok_match.update({"timestamp": new_timestamp})
+                all_events[i] = grok_match
+            except Exception:
+                print('Error parsing line. Skipping')
+                continue
+    with open(output, 'w') as f:
         json.dump(all_events, f, indent=4)
     print('json wrote to file! ☑')
+    return
 
-if args.output:
-    main(args.log, args.output)
-else:
-    main(args.log)
+'''if args.output:
+    if args.patterns:
+        main(log=args.log, output=args.output, grok_patterns_file=args.patterns)
+    else:
+        main(log=args.log, output=args.output)
+if not args.output:
+    if args.patterns:
+        main(log=args.log, grok_patterns_file=args.patterns)
+    else:
+        main(log=args.log)'''
+
+if __name__=="__main__":
+    main(log='evil_1000.log')

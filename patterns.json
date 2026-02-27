@@ -1,21 +1,17 @@
 {
     "patterns": [
-        "%{SYSLOGTIMESTAMP:timestamp} %{HOSTNAME:host} %{DATA:proc}\\[%{INT:pid}\\]: %{WORD:login_status} %{WORD:auth_method} for %{USERNAME:login} from %{IP:src_ip} port %{INT:src_port} %{DATA:uri}",
-        "%{SYSLOGTIMESTAMP:timestamp} %{HOSTNAME:host} %{DATA:proc}\\[%{INT:pid}\\]: %{WORD:login} : user NOT in sudoers ; TTY=%{WORD:tty} ; PWD=%{PATH:pwd} ; USER=%{WORD:target_user} ; COMMAND=%{PATH:command}",
-        "%{SYSLOGTIMESTAMP:timestamp} %{HOSTNAME:host} %{DATA:proc}\\[%{INT:pid}\\]: %{USERNAME:login} : %{USERNAME:target_user} %{DATA:login_status}; TTY=%{DATA:tty} ; PWD=%{DATA:pwd} ; USER=%{DATA:auth_user} ; COMMAND=%{PATH:command}",
-        "%{SYSLOGTIMESTAMP:timestamp} %{HOSTNAME:host} %{DATA:proc}\\[%{INT:pid}\\]: %{WORD:login_status} %{WORD:auth_method} for (?:invalid user )?%{USERNAME:login} from %{IP:src_ip} port %{INT:src_port}",
-        "^%{SYSLOGTIMESTAMP:timestamp} %{HOSTNAME:host} %{DATA:proc}\\[%{INT:pid}\\]: %{WORD:login_status} %{USERNAME:login} from %{IP:src_ip} port %{INT:dst_port}$",
-        "%{SYSLOGTIMESTAMP:timestamp} %{HOSTNAME:host} %{DATA:proc}\\[%{INT:pid}\\]: Invalid user %{USERNAME:login} from %{IP:src_ip} port %{INT:port}",
-        "^%{SYSLOGTIMESTAMP:timestamp} %{HOSTNAME:host} %{WORD:proc}\\[%{INT:pid}\\]: new user: name=%{USERNAME:login}, UID=%{INT:uid}, GID=%{INT:gid}, home=%{PATH:pwd}, shell=%{PATH:shell}$",
-        "%{SYSLOGTIMESTAMP:timestamp} %{HOSTNAME:host} %{DATA:proc}\\[%{INT:pid}\\]: %{WORD:severity}: maximum authentication attempts exceeded for invalid user %{WORD:login} from %{IP:src_ip} port %{INT:src_port} %{WORD:auth_method} \\[preauth\\]",
-        "%{SYSLOGTIMESTAMP:timestamp} %{HOSTNAME:host} %{DATA:proc}\\[%{INT:pid}\\]:\\s+%{USERNAME:login}\\s*:\\s+TTY=%{DATA:tty}\\s*;\\s+PWD=%{DATA:pwd}\\s*;\\s+USER=%{USERNAME:target_user}\\s*;\\s+COMMAND=%{GREEDYDATA:command}",
-        "%{SYSLOGTIMESTAMP:timestamp} %{HOSTNAME:host} %{DATA:proc}\\[%{INT:pid}\\]: %{LOGLEVEL:severity}  \\[%{DATA:facility}\\] %{WORD:action} %{IP:src_ip}",
-        "%{SYSLOGTIMESTAMP:timestamp} %{HOSTNAME:host} %{DATA:proc}\\[%{INT:pid}\\]: \\(%{USERNAME:login}\\) CMD %{PATH:command}",
-        "%{SYSLOGTIMESTAMP:timestamp} %{HOSTNAME:host} %{WORD:proc}\\[%{INT:pid}\\]: \\(%{USERNAME:login}\\) %{WORD:command} \\(%{PATH:path}\\)",
-        "^%{SYSLOGTIMESTAMP:timestamp} %{HOSTNAME:host} %{WORD:proc}\\[%{INT:pid}\\]: Disconnected from user %{USERNAME:login} %{IP:src_ip} port %{INT:dst_port}$",
-        "%{SYSLOGTIMESTAMP:timestamp} %{HOSTNAME:host} %{DATA:proc}\\[%{INT:pid}\\]: New session %{INT:session_id} of user %{USERNAME:target_user}\\.",
-        "%{SYSLOGTIMESTAMP:timestamp} %{HOSTNAME:host} CRON\\[%{INT:pid}\\]: \\(%{USERNAME:login}\\) CMD \\(%{GREEDYDATA:command}\\)",
-        "%{SYSLOGTIMESTAMP:timestamp} %{HOSTNAME:host} %{DATA:proc}\\[%{INT:pid}\\]: %{WORD:login_status} user %{USERNAME:target_user} from %{IP:src_ip}",
-        "%{IP:host} - - \\[%{DATA:timestamp}\\] \"%{WORD:command} %{PATH:uri} HTTP/%{NUMBER:http_version}\" %{INT:status_code} %{INT:bytes_sent}"
+        "%{SYSLOGTIMESTAMP:timestamp} %{HOSTNAME:host} %{WORD:proc}\\[%{INT:pid}\\]: \\(%{USERNAME:login}\\) CMD \\(%{PATH:path}\\)",
+        "%{SYSLOGTIMESTAMP:timestamp} %{HOSTNAME:host} %{WORD:proc}\\[%{INT:pid}\\]: Disconnected from user %{USERNAME:login} %{IP:src_ip} port %{INT:src_port}",
+        "%{SYSLOGTIMESTAMP:timestamp} %{HOSTNAME:host} %{WORD:proc}\\[%{INT:pid}\\]: %{WORD:login_status} %{WORD:auth_method} for %{USERNAME:login} from %{IP:src_ip} port %{INT:src_port} ssh2: %{WORD:signature} %{WORD:hash_algo}:%{GREEDYDATA:hash}",
+        "%{SYSLOGTIMESTAMP:timestamp} %{HOSTNAME:host} %{NOTSPACE:proc}\\[%{INT:pid}\\]: New session %{INT:session_id} of user %{USERNAME:login}\\.",
+        "%{SYSLOGTIMESTAMP:timestamp} %{HOSTNAME:host} %{WORD:proc}\\[%{INT:pid}\\]:\\s+%{USERNAME:login}\\s+:\\s+TTY=%{DATA:tty}\\s+;\\s+PWD=%{PATH:pwd}\\s+;\\s+USER=%{USERNAME:target_user}\\s+;\\s+COMMAND=%{GREEDYDATA:command}",
+        "%{SYSLOGTIMESTAMP:timestamp} %{HOSTNAME:host} %{WORD:proc}\\[%{INT:pid}\\]: \\(%{USERNAME:login}\\) CMD \\(%{PATH:command}(?: %{DATA:args})?\\)",
+        "^%{SYSLOGTIMESTAMP:timestamp} %{HOSTNAME:host} %{WORD:proc}\\[%{INT:pid}\\]: %{WORD:login_status} %{WORD:auth_method} for %{USERNAME:login} from %{IP:src_ip} port %{INT:src_port}(?: %{WORD})?$",
+        "^%{SYSLOGTIMESTAMP:timestamp} %{HOSTNAME:host} %{WORD:proc}\\[%{INT:pid}\\]: %{USER:login} : %{DATA:login_status} ; TTY=%{DATA:tty} ; PWD=%{PATH:pwd} ; USER=%{USER:target_user} ; COMMAND=%{PATH:command}$",
+        "%{SYSLOGTIMESTAMP:timestamp} %{HOSTNAME:host} %{WORD:proc}\\[%{INT:pid}\\]: %{WORD:login_status} %{WORD:auth_method} for (?:invalid user )?%{USERNAME:target_user} from %{IP:src_ip} port %{INT:src_port} %{WORD}",
+        "%{SYSLOGTIMESTAMP:timestamp} %{HOSTNAME:host} %{WORD:proc}\\[%{INT:pid}\\]: Invalid user %{USERNAME:target_user} from %{IP:src_ip} port %{INT:src_port}",
+        "^%{SYSLOGTIMESTAMP:timestamp} %{HOSTNAME:host} %{WORD:proc}\\[%{INT:pid}\\]: new user: name=%{USERNAME:login}, UID=%{INT}, GID=%{INT}, home=%{PATH:path}, shell=%{PATH:command}$",
+        "%{SYSLOGTIMESTAMP:timestamp} %{HOSTNAME:host} %{WORD:proc}\\[%{INT:pid}\\]: %{WORD:severity}: maximum authentication attempts exceeded for invalid user %{USERNAME:login} from %{IP:src_ip} port %{INT:src_port} ssh2 \\[preauth\\]",
+        "%{SYSLOGTIMESTAMP:timestamp} %{HOSTNAME:host} %{DATA:proc}\\[%{INT:pid}\\]: %{WORD:severity}\\s+\\[%{WORD:facility}\\] Ban %{IP:src_ip}"
     ]
 }
