@@ -10,8 +10,16 @@ Using the power of OpenAI's GPT-5-nano, this library dynamically writes Grok pat
 - `pygrok`
 - `openai`
 
+## Use
+1. Clone this repo: `git clone https://github.com/mdunn99/groktime.git`
+2. Create a virtual environment
+3. Create a `.env` file in your project folder and add your OpenAI API key: `OPENAI_API_KEY=<YOUR_KEY_HERE>`
+4. Install the dependencies: `pip install pygrok openai`
+5. Run: `python3 main.py -l LOG_FILE`
+
 ## Working on:
 - More robust decision tree
 - Support for streaming logs
 - Support for Web API calls
 - Asynchronous pattern writing with streaming
+- Add more datetime formats
