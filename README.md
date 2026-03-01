@@ -1,4 +1,5 @@
 # GrokTime - Dynamic Grokker
+
 Using the power of OpenAI's GPT-5-mini, this library dynamically writes Grok patterns to an adjustable config file to make the process of log ingestion easier. This library was built to support my UCF Knight Hacks project: "Vigil" (a work in progress SIEM).
 
 ## Core Features
