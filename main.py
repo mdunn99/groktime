@@ -14,12 +14,6 @@ VARIABLES = ["timestamp", "host", "proc", "pid", "severity", "facility",
         "request_id", "trace_id", "status_code", "bytes_sent", "bytes_recv", "duration", "tty", "pwd"]
 LLM_REASONING_EFFORT = "low"
 
-parser = argparse.ArgumentParser(description="GrokTime - Log Parser")
-parser.add_argument("-l", "--log", help="Log to pass into parser")
-parser.add_argument("-o", "--output", help="Output json file (default: out.json)")
-parser.add_argument("-p", "--patterns", help="The pattern json file to parse through (default: patterns.json)")
-args = parser.parse_args()
-
 class LLMCalls:
     def __init__(self):
         self.instantiated = False
@@ -94,11 +88,10 @@ class grokMatcher(LLMCalls):
         super().__init__()
         self.grok_patterns_file = grok_patterns_file
         with open(grok_patterns_file, 'r') as f:
-            self.pattern_dict = json.load(f)['patterns']
-        self.pattern_list = [p for p in self.pattern_dict]
-        self.pygrok_object_list = [Grok(p) for p in self.pattern_list]
+            self.pattern_dict = json.load(f)
+        self.pygrok_object_list = [Grok(p) for p in self.pattern_dict['patterns']]
 
-    def handle_new_formats(self, log_string: str) -> tuple[dict | None, str | None, Grok | None]:
+    def _handle_new_formats(self, log_string: str) -> tuple[dict | None, str | None, Grok | None]:
         new_grok_pattern = self.call_api(log_string)
         try:
             pygrok_object = Grok(new_grok_pattern)
@@ -109,7 +102,7 @@ class grokMatcher(LLMCalls):
         return grok_match, new_grok_pattern, pygrok_object
 
     # loop through grok list to find the first match
-    def match_grok_pattern(self, log_line: str) -> dict | None:
+    def _match_grok_pattern(self, log_line: str) -> dict | None:
         grok_match = None
         for obj in self.pygrok_object_list:
             grok_match = obj.match(log_line) # match log line to pygrok object
@@ -122,40 +115,41 @@ class grokMatcher(LLMCalls):
             try:
                 for i in range(3): # retry 3 times in case api gets the parsing wrong (grok_match == None)
                     print('retrying api call...'  if i >0 else 'new format found...')
-                    grok_match, grok_pattern, pygrok_object = self.handle_new_formats(log_line)
+                    grok_match, grok_pattern, pygrok_object = self._handle_new_formats(log_line)
                     if grok_match and grok_pattern and pygrok_object:
-                        self.pattern_list.append(grok_pattern)
+                        self.pattern_dict['patterns'].append(grok_pattern)
                         self.pygrok_object_list.append(pygrok_object)
                         return grok_match
             except Exception as e:
+                print(e)
                 return None
 
 class fileHandler:
     def __init__(self, grok_matcher: grokMatcher):
         self.grok_matcher = grok_matcher
 
-    # append new pattern to master file, lets do this periodically instead of every call maybe?
-    def append_master_file(self) -> None:
+    # append new pattern(s) to master file, lets do this periodically instead of every call maybe?
+    def dump_patterns_to_file(self) -> None:
         with open(self.grok_matcher.grok_patterns_file, 'r+') as f:
             f.seek(0) # move the cursor to the beginning of the file
             json.dump(self.grok_matcher.pattern_dict, f, indent=4) # dump the appended pattern to the json file
             return
 
 class logProcessor:
-    def __init__(self, grok_patterns_file: str, output: str):
+    def __init__(self, output: str, grok_patterns_file: str):
         self.grok_matcher = grokMatcher(grok_patterns_file=grok_patterns_file)
         self.file_handler = fileHandler(self.grok_matcher)
         self.grok_patterns_file = grok_patterns_file
         self.output = output
         self.events = dict()
 
-    def send_to_api(self, json_object: dict) -> None:
+    def _send_to_api(self, json_object: dict) -> None:
         print(json_object)
 
-    # a log of logs? maybe this is dumb
-    def write_to_json(self) -> None:
+    # need to be appending rather than just writing
+    def _write_to_json(self, events: dict) -> None:
         with open(self.output, 'w') as f:
-            json.dump(self.events, f, indent=4)
+            json.dump(events, f, indent=4)
         print('json wrote to file! ☑')
 
     # highly problematic
@@ -182,35 +176,38 @@ class logProcessor:
         return timestamp
 
     def process(self, log_excerpt: list[str]) -> None:
+        events = dict()
         for i, entry in enumerate(log_excerpt): # reads each new log entry
             entry = entry.rstrip()
-            grok_match = self.grok_matcher.match_grok_pattern(entry)
+            grok_match = self.grok_matcher._match_grok_pattern(entry)
             if grok_match:
                 new_timestamp = self.convert_to_unix_time(grok_match["timestamp"])
                 grok_match.update({"timestamp": new_timestamp})
-                self.events[i] = grok_match
+                events[i] = grok_match
             else:
                 print(f'Error parsing line. Skipping.')
                 continue
-            self.send_to_api(grok_match)
+            self._send_to_api(grok_match) # 'send to api'
+        self.file_handler.dump_patterns_to_file() # dump current patterns to a file like patterns.json
+        if self.output != '': self._write_to_json(events)
         return
 
             
 class eventHandler(FileSystemEventHandler):
-    def __init__(self, log: str, output: str='out.json', grok_patterns_file: str='patterns.json'):
-        self.processor = logProcessor(grok_patterns_file, output)
+    def __init__(self, log: str, output: str='', grok_patterns_file: str='patterns.json'):
+        self.processor = logProcessor(output, grok_patterns_file)
         self.log = log
 
         with open(self.log, 'r') as f:
             self.pre = [line.rstrip() for line in f] # maybe handling for very large logs
-
+        self.processor.process(log_excerpt=self.pre[-500:])
         print('waiting for event...')
 
     def on_modified(self, event) -> None:
-        if event.src_path == f'./{self.log}':
+        if event.src_path == f'{self.log}':
             with open(self.log, 'r') as f:
                 now = [line.rstrip() for line in f]
-                now = now[-250:]
+                now = now[-500:]
                 if now != self.pre:
                     pass
                 else:
@@ -220,30 +217,37 @@ class eventHandler(FileSystemEventHandler):
                 self.processor.process(log_excerpt=now)
                 f.seek(0) # go back to the beginning of the file to redefine pre
                 pre = [line.rstrip() for line in f]
-                self.pre = pre[-250:] # hold last 250 lines
+                self.pre = pre[-500:] # hold last 250 lines
                 print('waiting for event...')
 
+parser = argparse.ArgumentParser(description="GrokTime - Log Parser")
+parser.add_argument("-l", "--log", help="Log to pass into parser")
+parser.add_argument("-o", "--output", help="Output json file (default: out.json)")
+parser.add_argument("-p", "--patterns", help="The pattern json file to parse through (default: patterns.json)")
+args = parser.parse_args()
+
+log = args.log
+output = args.output
+patterns = args.patterns
+if output and patterns:
+    event_handler = eventHandler(log=log, output=output, grok_patterns_file=patterns)
+elif output and not patterns:
+    event_handler = eventHandler(log=log, output=output)
+elif not output and patterns:
+    event_handler = eventHandler(log=log, grok_patterns_file=patterns)
+elif not output and not patterns:
+    event_handler = eventHandler(log=log)
+    if not log:
+        parser.error("-l is required. Use python3 main.py -h to see a list of arguments.")
+observer = Observer()
+observer.schedule(event_handler, ".", recursive=True)
+observer.start()
+try:
+    while True:
+        sleep(1)
+finally:
+    observer.stop()
+    observer.join()
 
 if __name__=="__main__":
-    log = args.log
-    output = args.output
-    patterns = args.patterns
-    if output and patterns:
-        event_handler = eventHandler(log=log, output=output, grok_patterns_file=patterns)
-    elif output and not patterns:
-        event_handler = eventHandler(log=log, output=output)
-    elif not output and patterns:
-        event_handler = eventHandler(log=log, grok_patterns_file=patterns)
-    elif not output and not patterns:
-        event_handler = eventHandler(log=log)
-        if not log:
-            parser.error("-l is required. Use python3 main.py -h to see a list of arguments.")
-    observer = Observer()
-    observer.schedule(event_handler, ".", recursive=True)
-    observer.start()
-    try:
-        while True:
-            sleep(1)
-    finally:
-        observer.stop()
-        observer.join()
+    pass
