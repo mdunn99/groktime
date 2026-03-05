@@ -11,7 +11,7 @@ VARIABLES = ["timestamp", "host", "proc", "pid", "severity", "facility",
         "request_id", "trace_id", "status_code", "bytes_sent", "bytes_recv", 
         "duration", "tty", "pwd"]
 
-MODEL = "gpt-4o-mini"
+MODEL = "gpt-5-mini"
 LLM_REASONING_EFFORT = "low"
 
 
