@@ -1,8 +1,5 @@
-# groktime.py
-
 from pygrok import Grok
 import json
-from datetime import datetime
 
 VARIABLES = ["timestamp", "host", "proc", "pid", "severity", "facility",
         "login", "target_user", "auth_method", "login_status", "src_ip",
@@ -10,10 +7,8 @@ VARIABLES = ["timestamp", "host", "proc", "pid", "severity", "facility",
         "hash", "hash_algo", "signature", "command", "args", "session_id",
         "request_id", "trace_id", "status_code", "bytes_sent", "bytes_recv", 
         "duration", "tty", "pwd"]
-
 MODEL = "gpt-5-mini"
 LLM_REASONING_EFFORT = "low"
-
 
 class LLMCalls:
     def __init__(self):
@@ -73,8 +68,6 @@ class LLMCalls:
 
 
 class PatternStore:
-    """Owns the pattern list and its persistence."""
-
     def __init__(self, patterns_file: str):
         self.patterns_file = patterns_file
         with open(patterns_file, 'r') as f:
@@ -95,8 +88,6 @@ class PatternStore:
 
 
 class GrokMatcher:
-    """Matches log lines against known patterns, expanding the set via LLM when needed."""
-
     def __init__(self, store: PatternStore, llm: LLMCalls):
         self.store = store
         self.llm = llm
@@ -126,28 +117,41 @@ class GrokMatcher:
 
 
 class LogProcessor:
-    """Parses a list of log lines into structured events."""
-
     def __init__(self, matcher: GrokMatcher):
         self.matcher = matcher
 
-    def process(self, lines: list[str]) -> list[dict]:
-        events = []
+    def _is_continuation(self, line: str) -> bool:
+        return line.startswith(("\t", "    ")) or line.startswith("Caused by:")
+
+    def _fold(self, lines: list[str]) -> list[str]:
+        blocks = []
+        current = []
         for line in lines:
             line = line.rstrip()
-            match = self.matcher.match(line)
+            if not line:
+                continue
+            if self._is_continuation(line) and current:
+                current.append(line)
+            else:
+                if current:
+                    blocks.append("\n".join(current))
+                current = [line]
+        if current:
+            blocks.append("\n".join(current))
+        return blocks
+
+    def process(self, lines: list[str]) -> list[dict]:
+        events = []
+        for block in self._fold(lines):
+            match = self.matcher.match(block)
             if not match:
-                print(f"Error parsing line, skipping: {line!r}")
+                print(f"Error parsing block, skipping: {block[:80]!r}")
                 continue
             events.append(match)
         return events
 
 
 def parse_logs(log_path: str, patterns_file: str = "patterns.json") -> list[dict]:
-    """
-    Parse a log file into structured events.
-    Discovers and persists new Grok patterns automatically.
-    """
     store = PatternStore(patterns_file)
     matcher = GrokMatcher(store=store, llm=LLMCalls())
     processor = LogProcessor(matcher=matcher)
