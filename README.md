@@ -1,106 +1,38 @@
-# GrokTime
+# grokmoment
 
-A self-learning log parser. Feed it log files, get back structured dicts. When it encounters a log format it doesn't recognise, it calls OpenAI to generate a new Grok pattern on the fly, validates it, and caches it to `patterns.json` for free reuse.
-
----
+A Python library for parsing log files into structured events using Grok patterns. When a log line doesn't match any known pattern, grokmoment automatically generates a new one via LLM and persists it for future use.
 
 ## Requirements
 
 - Python 3.10+
-- An OpenAI API key
-
-## Installation
+- An OpenAI API key set as `OPENAI_API_KEY` in your environment
 
 ```bash
-git clone https://github.com/mdunn99/groktime.git
-cd groktime
-python -m venv .venv && source .venv/bin/activate
-pip install pygrok openai watchdog
+pip install pygrok openai
 ```
-
-Create a `.env` file in the project root:
-```
-OPENAI_API_KEY=your_key_here
-```
-
----
 
 ## Usage
 
-### One-shot parsing — `parse_logs`
-
-Parse a list of log files and get back a flat list of dicts, one per log line.
-
 ```python
-from groktime import parse_logs
+from grokmoment import parse_logs
 
-events = parse_logs(["logs/auth.log", "logs/apache.log"])
-
-for event in events:
-    print(event)
-    # {"timestamp": "Mar 1 12:00:00", "host": "myserver", "src_ip": "10.0.0.1", ...}
+events = parse_logs("auth.log", patterns_file="patterns.json")
 ```
 
-Each dict contains whichever of the following fields were present in the log line:
+`parse_logs` returns a list of dicts, one per successfully parsed log line, with keys drawn from a fixed set of field names (e.g. `timestamp`, `src_ip`, `host`, `severity`).
 
-```
-timestamp, host, proc, pid, severity, facility, login, target_user,
-auth_method, login_status, src_ip, dst_ip, src_port, dst_port, url,
-domain, path, uri, hash, hash_algo, signature, command, args,
-session_id, request_id, trace_id, status_code, bytes_sent, bytes_recv,
-duration, tty, pwd
-```
+If a line doesn't match any existing pattern, grokmoment calls the OpenAI API to generate one, validates it, and appends it to `patterns_file`. Patterns persist across runs.
 
-### Live file watching — `run_observer`
+## Pattern file format
 
-Tails a set of log files and processes new lines as they're written. This is a blocking call — run it in a thread if you need your app to keep doing other things.
+`patterns.json` is a simple JSON file with a `patterns` array:
 
-```python
-from groktime import run_observer
-import threading
-
-t = threading.Thread(
-    target=run_observer,
-    args=("logs/list_of_file_paths",),
-    kwargs={"output": "out.json", "grok_patterns_file": "patterns.json"},
-    daemon=True
-)
-t.start()
+```json
+{
+    "patterns": [
+        "%{SYSLOGTIMESTAMP:timestamp} %{HOSTNAME:host} %{WORD:proc}\\[%{INT:pid}\\]: %{GREEDYDATA:args}"
+    ]
+}
 ```
 
-`list_of_file_paths` is a plain text file with one log path per line:
-```
-/var/log/auth.log
-/var/log/apache2/access.log
-/var/log/syslog
-```
-
----
-
-
-
-## How it works
-
-1. Each log line is matched against the patterns in `patterns.json`
-2. On a match, the extracted fields are returned as a dict
-3. On a miss, OpenAI generates a new Grok pattern for that line format
-4. The new pattern is validated, and if it matches, appended to `patterns.json`
-5. All subsequent lines of the same format hit the cache — no further API calls
-
-Pattern generation uses a low reasoning effort model so API costs are negligible.
-
----
-
-## Project Structure
-
-```
-groktime/
-├── groktime.py          # Core library
-├── main.py              # CLI entrypoint
-├── patterns.json        # Grok pattern cache
-└── logs/
-    └── list_of_file_paths   # One log path per line
-```
-
-## Note
-AI was used conservatively during the creation of this project. AI did produce this README file.
+New patterns discovered at runtime are appended to this array automatically.
