@@ -91,16 +91,5 @@ Pattern generation uses a low reasoning effort model so API costs are negligible
 
 ---
 
-## Project Structure
-
-```
-groktime/
-├── groktime.py          # Core library
-├── main.py              # CLI entrypoint
-├── patterns.json        # Grok pattern cache
-└── logs/
-    └── list_of_file_paths   # One log path per line
-```
-
 ## Note
 AI was used conservatively during the creation of this project. AI did produce this README file.
