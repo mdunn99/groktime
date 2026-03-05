@@ -5,6 +5,7 @@ import argparse
 from time import sleep
 from watchdog.events import FileSystemEvent, FileSystemEventHandler
 from watchdog.observers import Observer
+import os
 
 # CONFIGURABLE OBJECTS
 VARIABLES = ["timestamp", "host", "proc", "pid", "severity", "facility",
@@ -97,7 +98,7 @@ class GrokMatcher(LLMCalls):
         try:
             pygrok_object = Grok(new_grok_pattern)
         except KeyError as e:
-            print(f"KeyError: {e} is not valid. Retrying...")
+            #print(f"KeyError: {e} is not valid. Retrying...")
             return None, None, None
         grok_match = pygrok_object.match(log_string)
         return grok_match, new_grok_pattern, pygrok_object
@@ -115,14 +116,14 @@ class GrokMatcher(LLMCalls):
         if not grok_match:
             try:
                 for i in range(3): # retry 3 times in case api gets the parsing wrong (grok_match == None)
-                    print('retrying api call...'  if i >0 else 'new format found...')
+                    #print('retrying api call...'  if i >0 else 'new format found...')
                     grok_match, grok_pattern, pygrok_object = self._handle_new_formats(log_line)
                     if grok_match and grok_pattern and pygrok_object:
                         self.pattern_dict['patterns'].append(grok_pattern)
                         self.pygrok_object_list.append(pygrok_object)
                         return grok_match
             except Exception as e:
-                print(e)
+                #print(e)
                 return None
 
 class FileHandler:
@@ -145,12 +146,13 @@ class LogProcessor:
 
     def _send_to_api(self, json_object: dict) -> dict:
         return json_object
+        #print(json_object)
 
     # need to be appending rather than just writing
     def _write_to_json(self, events: dict) -> None:
         with open(self.output, 'w') as f:
             json.dump(events, f, indent=4)
-        print('json wrote to file! ☑')
+        #print('json wrote to file! ☑')
 
     # highly problematic
     def convert_to_unix_time(self, timestamp: str) -> float | str:
@@ -172,53 +174,81 @@ class LogProcessor:
             except ValueError:
                 continue
 
-        print('failed to convert timestamp')
+        #print('failed to convert timestamp')
         return timestamp
 
-    def process(self, log_excerpt: list[str]) -> dict:
-        events: dict[int, dict] = {}
+    def process(self, log_excerpt: list[str]) -> list:
+        events: list[dict] = []
         for i, entry in enumerate(log_excerpt):
             entry = entry.rstrip()
             grok_match = self.grok_matcher.match_grok_pattern(entry)
             if not grok_match:
-                print(f'Error parsing line. Skipping.')
+                #print(f'Error parsing line. Skipping.')
                 continue
 
             #new_timestamp = self.convert_to_unix_time(grok_match["timestamp"])
             #grok_match.update({"timestamp": new_timestamp})
-            events[i] = grok_match
-            self._send_to_api(grok_match) # 'send to api'
+            events.append(grok_match)
+            #self._send_to_api(grok_match) # 'send to api'
 
         self.file_handler.dump_patterns_to_file() # dump current patterns to a file like patterns.json
         if self.output:
             self._write_to_json(events)
+        #print(f'Processed log excerpt with {len(events)} events.\n')
         return events
 
             
 class EventHandler(FileSystemEventHandler):
-    def __init__(self, log: str, output: str="", grok_patterns_file: str="", verbose: int=0):
+    def __init__(self, list_of_logs: list[str], output: str="", grok_patterns_file: str="", verbose: int=0):
         self.processor = LogProcessor(output, grok_patterns_file)
-        self.log = log
+        self.list_of_logs = list_of_logs
+        self.output = output
+        self.patterns_file = grok_patterns_file
 
-        with open(self.log, 'r') as f:
-            self.pre = [line.rstrip() for line in f] # maybe handling for very large logs
+        # Maps absolute log path -> current byte offset
+        self.file_offsets: dict[str, int] = {}
 
-        self.processor.process(log_excerpt=self.pre[-500:])
-        print('Waiting for event...')
+        for log in list_of_logs:
+            log_path = os.path.abspath(log.rstrip())
+            log_name = os.path.basename(log_path)
+            #print(f'processing {log_name}')
+            try:
+                with open(log_path, 'r') as f:
+                    lines = f.readlines()
+                    self.file_offsets[log_path] = f.tell()
+            except FileNotFoundError as e:
+                #print(f"{e}. Skipping...\n")
+                continue
+            self.processor.process(log_excerpt=[l.rstrip() for l in lines[-500:]])
+        #print('Waiting for event...')
 
-    def on_modified(self, event) -> None:
-        with open(self.log, 'r') as f:
-            now = [line.rstrip() for line in f][-500:]
-
-        if now == self.pre:
+    def on_modified(self, event: FileSystemEvent) -> None:
+        log_path = os.path.abspath(event.src_path)
+        if log_path not in self.file_offsets:
             return
-    
-        self.processor.process(log_excerpt=now)
-        self.pre = now
-        print('Waiting for event...')
 
-def run_observer(log: str, output: str="", grok_patterns_file: str="patterns.json", verbose: int=0) -> None:
-    event_handler = EventHandler(log=log, output=output, grok_patterns_file=grok_patterns_file, verbose=verbose)
+        offset = self.file_offsets[log_path]
+        try:
+            with open(log_path, 'r') as f:
+                f.seek(offset)
+                new_lines = f.readlines()
+                self.file_offsets[log_path] = f.tell()
+        except FileNotFoundError as e:
+            #print(f"{e}. Skipping...\n")
+            return
+
+        if not new_lines:
+            return
+
+        self.processor.process(log_excerpt=[l.rstrip() for l in new_lines])
+        #print('Waiting for event...')
+
+def run_observer(file_path_list: str, output: str="", grok_patterns_file: str="patterns.json", verbose: int=0) -> None:
+    list_of_logs = []
+    with open(file_path_list, 'r') as f:
+        for log in f:
+            list_of_logs.append(log)
+    event_handler = EventHandler(list_of_logs=list_of_logs, output=output, grok_patterns_file=grok_patterns_file, verbose=verbose)
     observer = Observer()
     observer.schedule(event_handler, ".", recursive=True)
     observer.start()
@@ -228,3 +258,22 @@ def run_observer(log: str, output: str="", grok_patterns_file: str="patterns.jso
     finally:
         observer.stop()
         observer.join()
+
+def parse_logs(log_paths: list[str], grok_patterns_file: str="patterns.json") -> list:
+    """
+    One-shot parse of given log files. Returns a dict of {filename: [events]}.
+    Use this instead of run_observer if you don't need live watching.
+    """
+    processor = LogProcessor(output="", grok_patterns_file=grok_patterns_file)
+    results = []
+    for log_path in log_paths:
+        log_path = log_path.rstrip()
+        try:
+            with open(log_path, 'r') as f:
+                lines = f.readlines()
+        except FileNotFoundError as e:
+            #print(f"{e}. Skipping...")
+            continue
+        events = processor.process(log_excerpt=[l.rstrip() for l in lines])
+        results.extend(events)
+    return results
